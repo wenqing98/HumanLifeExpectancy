@@ -1,0 +1,758 @@
+---
+title: '200615569'
+output:
+  html_document: default
+  word_document: default
+---
+
+*Part 1*
+Model 1 - PCA
+Model 2 - K-Means Clustering
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+memory.limit(240000)
+```
+
+```{r}
+#install.packages(' ')
+```
+
+```{r}
+library(haven)
+library(dplyr)
+library(corrplot)
+library(ggplot2)
+library(GGally)
+library(ggfortify)
+library(DBI)
+library(tidyr)
+library(factoextra)
+library(cluster)
+library(car)
+library(olsrr)
+library(Metrics)
+library(caret)
+library(tree)
+library(randomForest)
+library(gbm)
+library(caTools)
+library(ROCR)
+library(glmnet)
+library(rpart)
+library(class)
+library(rpart)
+library(rpart.plot)
+```
+
+
+```{r}
+setwd("~/Resume")
+```
+#Setting working Directory
+
+```{r}
+lifeExp <- read.csv(file = '~/Resume/Life Expectancy data.csv')
+```
+#Reading source file
+
+```{r}
+lifeExp <- lifeExp[,-1:-2]
+```
+
+```{r}
+lifeExp$Status <- ifelse(lifeExp$Status == "Developing", 0, 1)
+```
+
+Checking for outliers to determine if use median/mean to replace
+```{r}
+par(mfrow=c(2,7))
+boxplot(lifeExp$Life.expectancy,
+        ylab = "Life Expectancy", col= "#7AD7F0", outcol="#FF0000")
+boxplot(lifeExp$Adult.Mortality,
+        ylab = "Adult Mortality",col= "#7AD7F0", outcol="#FF0000")
+boxplot(lifeExp$Alcohol,
+        ylab = "Alcohol",col= "#7AD7F0",outcol="#FF0000")
+boxplot(lifeExp$Hepatitis.B,
+        ylab = "Hepatitis B",col= "#7AD7F0",outcol="#FF0000")
+boxplot(lifeExp$BMI,
+        ylab = "BMI",col= "#7AD7F0",outcol="#FF0000")
+boxplot(lifeExp$Polio,
+        ylab = "Polio",col= "#7AD7F0",outcol="#FF0000")
+boxplot(lifeExp$Total.expenditure,
+        ylab = "Total Expenditure",col= "#7AD7F0",outcol="#FF0000")
+boxplot(lifeExp$Diphtheria,
+        ylab = "Diphteria",col= "#7AD7F0",outcol="#FF0000")
+boxplot(lifeExp$GDP,
+        ylab = "GDP",col= "#7AD7F0",outcol="#FF0000")
+boxplot(lifeExp$Population,
+        ylab = "Population",col= "#7AD7F0",outcol="#FF0000")
+boxplot(lifeExp$thinness..1.19.years,
+        ylab = "Thinness 1-19 years",col= "#7AD7F0",outcol="#FF0000")
+boxplot(lifeExp$thinness.5.9.years,
+        ylab = "Thinness 5-9 years",col= "#7AD7F0",outcol="#FF0000")
+boxplot(lifeExp$Income.composition.of.resources,
+        ylab = "Income Composition",col= "#7AD7F0",outcol="#FF0000")
+boxplot(lifeExp$Schooling,
+        ylab = "Schooling",col= "#7AD7F0",outcol="#FF0000")
+```
+Finding the missing values inside
+```{r}
+missing_counts <- data.frame(feature = factor(names(lifeExp)), counts=sapply(lifeExp, function(x)  sum(is.na(x))))
+missing_counts
+```
+
+
+Replacing Missing value with Median/Mean
+```{r}
+cols_to_impute_median <- c("Life.expectancy", "Adult.Mortality", "Hepatitis.B", "Polio", "Diphtheria","Total.expenditure", "GDP", "Population", "thinness..1.19.years", "thinness.5.9.years", "Schooling")
+
+cols_to_impute_mean <- c("Alcohol", "BMI", "Income.composition.of.resources")
+
+for (col in cols_to_impute_median) {
+  lifeExp[[col]][is.na(lifeExp[[col]])] <- median(lifeExp[[col]], na.rm = TRUE)
+}
+
+for (col in cols_to_impute_mean) {
+  lifeExp[[col]][is.na(lifeExp[[col]])] <- mean(lifeExp[[col]], na.rm = TRUE)
+}
+```
+
+See Correlation (Note:Correlation does not imply multi-collinearity)
+```{r}
+lifeExpCor <- lifeExp[,-1]
+Num.Data <- sapply(lifeExpCor, is.numeric)
+cor.lifeExp <- cor(lifeExpCor[,Num.Data])
+corrplot(cor.lifeExp, addCoef.col = 1, number.cex = 0.8)
+```
+
+
+VIF (Variance Inflation Factor)
+```{r}
+vif_model <- lm(Life.expectancy ~., data = lifeExp)
+vif(vif_model)
+```
+
+```{r}
+vif_values <- vif(vif_model)
+
+barplot(vif_values, main= "VIF for each independent variable", col="orange", las=2,  ylim = c(0, 20))
+abline(h = 5, lwd = 2, lty = 1, srt=180)
+
+```
+Removing variables that is highly correlated with each other
+```{r}
+lifeExpVIF <- lifeExp[,-4]
+lifeExpVIF <- lifeExpVIF[,-14]
+lifeExpVIF <- lifeExpVIF[,-16]
+```
+
+Checking variables to see if there is correlation between variables
+```{r}
+vif_modelTest <- lm(Life.expectancy ~., data = lifeExpVIF)
+vif_valuesTest <- vif(vif_modelTest)
+
+barplot(vif_valuesTest, main= "VIF for each independent variable", col="orange", las=2,  ylim = c(0, 20))
+abline(h = 5, lwd = 2, lty = 1, srt=180)
+```
+
+
+
+PCA
+```{r}
+lifeExp.PCA <- prcomp(lifeExpVIF , scale= TRUE)
+summary(lifeExp.PCA) #First 2 PC captures 43% of the variance
+```
+
+```{r}
+fviz_eig(lifeExp.PCA) # scree plot to show the % of variances explained
+```
+
+```{r}
+names(lifeExp.PCA)
+```
+
+```{r}
+lifeExp.PCA$rotation=-lifeExp.PCA$rotation
+lifeExp.PCA$x=-lifeExp.PCA$x
+```
+
+```{r}
+lifeExp.PCA$rotation [,1:4]
+```
+
+```{r}
+options(ggrepel.max.overlaps = Inf)
+```
+
+Variable Correlation Plot
+```{r}
+fviz_pca_var(lifeExp.PCA,
+             col.var = "contrib", 
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), legend.title = "Contributation Var",repel = TRUE)
+```
+Variables that are positively correlated will be group together while negatively correlated will be positioned opposite of each other. The distance between the variable and their original position represent the quality of variable.
+
+```{r}
+autoplot(lifeExp.PCA, colour ='Life.expectancy', loadings = TRUE, # colour fill based on largest loadings contribution
+         loadings.label = TRUE)
+```
+
+
+K-Means Clustering
+```{r}
+lifeExp.PCA.Transform = as.data.frame(-lifeExp.PCA$x[,1:2])
+```
+
+```{r}
+k.max <- 20
+WSS = sapply(1:k.max, function(k){
+  kmeans(lifeExp.PCA.Transform, k, iter.max=30)$tot.withinss}
+  )
+```
+
+```{r}
+plot(1:k.max, WSS,
+     type="b", pch = 19, frame = FALSE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+```
+
+Setting centers = 4 since it is the optimal number of cluster
+```{r}
+set.seed(117)
+lifeExp.kmeans <- kmeans(lifeExp.PCA.Transform, centers = 4, nstart=20)
+attributes(lifeExp.kmeans)
+table(lifeExp.kmeans$cluster)
+```
+
+```{r}
+cluster_mean <- lifeExp %>%
+  mutate(Cluster = lifeExp.kmeans$cluster) %>% 
+  group_by(Cluster) %>%
+  summarise_all("mean")
+cluster_mean
+```
+
+
+```{r}
+autoplot(lifeExp.kmeans, data=lifeExp.PCA.Transform)
+```
+
+Hierarchical Clustering (testing)
+Note: Not possible to use HC since the variables under PCA are all continuous and not discrete thus it is not possible to categorise or group any of the variables.
+
+
+
+
+
+
+
+
+
+*Part 2*
+Model 1 - Full Model (Original Data)
+Model 2 - Linear Backwards Regression Model
+Model 3 - Cross-Validation (Full Data)
+Model 4 - Cross-Validation (backwards regression)
+Model 5 - Bagging
+Model 6 - Random Forest (After improving the mtry)
+Model 7 - Boosting
+
+
+
+Linear Regression Model
+Splitting the data into training/testing (80% training, 20% testing)
+```{r}
+set.seed(122)
+lifeExpVIF.sample <- sample.split(lifeExpVIF , SplitRatio = 0.8)
+lifeExpVIF.train <- subset(lifeExpVIF, lifeExpVIF.sample==TRUE)
+lifeExpVIF.test <- subset(lifeExpVIF, lifeExpVIF.sample==FALSE)
+```
+
+Generating a Linear Regression Model
+```{r}
+LR.ModelVIF <- lm(scale(Life.expectancy)~. , data=lifeExpVIF.train)
+summary(LR.ModelVIF)
+```
+
+RMSE of training data
+```{r}
+LR.ModelVIF.prediction.train <- predict(LR.ModelVIF, lifeExpVIF.train)
+LR.ModelVIF.error.train <- lifeExpVIF.train$Life.expectancy - LR.ModelVIF.prediction.train
+RMSE.Model1.train <- sqrt(mean(LR.ModelVIF.error.train^2))
+RMSE.Model1.train
+```
+
+RMSE of testing data
+```{r}
+LR.ModelVIF.prediction.test <- predict(LR.ModelVIF, lifeExpVIF.test)
+LR.ModelVIF.error.test <- lifeExpVIF.test$Life.expectancy - LR.ModelVIF.prediction.test
+RMSE.Model1.test <- sqrt(mean(LR.ModelVIF.error.test^2))
+RMSE.Model1.test
+```
+This is to see if the RMSE of testing and training is far apart or not, as too far --> overfitting/underfitting
+
+
+
+
+
+
+Linear Regression Model backwards stepwise method
+Splitting the Dataset
+```{r}
+set.seed(121)
+lifeExpVIFB.sample <- sample.split(lifeExpVIF, SplitRatio = 0.8)
+lifeExpVIFB.train <- subset(lifeExpVIF, lifeExpVIFB.sample==TRUE)
+lifeExpVIFB.test <- subset(lifeExpVIF, lifeExpVIFB.sample==FALSE)
+```
+
+Generating a Linear Regression
+```{r}
+LR.ModelVIFbackwards <- lm(scale(Life.expectancy)~. -(Alcohol+Total.expenditure+Population+under.five.deaths), data=lifeExpVIFB.train)
+summary(LR.ModelVIFbackwards)
+```
+
+RMSE of training data
+```{r}
+LR.ModelVIFB.prediction.train <- predict(LR.ModelVIFbackwards, lifeExpVIFB.train)
+LR.ModelVIFB.error.train <- lifeExpVIFB.train$Life.expectancy - LR.ModelVIFB.prediction.train
+RMSE.Model2.train <- sqrt(mean(LR.ModelVIFB.error.train^2))
+RMSE.Model2.train
+```
+
+RMSE of testing data
+```{r}
+LR.ModelVIFB.prediction.test <- predict(LR.ModelVIFbackwards, lifeExpVIFB.test)
+LR.ModelVIFB.error.test <- lifeExpVIFB.test$Life.expectancy - LR.ModelVIFB.prediction.test
+RMSE.Model2.test <- sqrt(mean(LR.ModelVIFB.error.test^2))
+RMSE.Model2.test
+```
+
+
+
+
+
+K-fold Cross Validation Full Data
+```{r}
+set.seed(200)
+n <- nrow(lifeExpVIF)
+folds <- 10
+
+lifeExp.RMSE.cv.train <- seq(1:folds)
+lifeExp.RMSE.cv.test <- seq(1:folds)
+testlist <- split(sample(1:n), 1:folds)
+
+for (i in 1: folds) {
+  trainset1 <- lifeExpVIF[-testlist[[i]],]
+  testset1 <- lifeExpVIF[testlist[[i]],]
+  
+  model.cv.train <- lm(scale(Life.expectancy)~., data=trainset1)
+  lifeExp.RMSE.cv.train[i] <- round(sqrt(mean(residuals(model.cv.train)^2)),2)
+}
+
+summary(model.cv.train)
+```
+
+RMSE of training data
+```{r}
+model.cv.prediction.train <- predict(model.cv.train, trainset1)
+model.cv.error.train <- trainset1$Life.expectancy - model.cv.prediction.train
+RMSE.Model3.train <- sqrt(mean(model.cv.error.train^2))
+RMSE.Model3.train
+```
+
+RMSE of testing data
+```{r}
+model.cv.prediction.test <- predict(model.cv.train, testset1)
+model.cv.error.test <- testset1$Life.expectancy - model.cv.prediction.test
+RMSE.Model3.test <- sqrt(mean(model.cv.error.test^2))
+RMSE.Model3.test
+```
+
+
+
+
+
+
+K-fold Cross Validation backwards stepwise regression 
+```{r}
+set.seed(300)
+n <- nrow(lifeExpVIF)
+folds <- 10
+
+lifeExp.RMSE.cv.train <- seq(1:folds)
+lifeExp.RMSE.cv.test <- seq(1:folds)
+testlist2 <- split(sample(1:n), 1:folds)
+
+lifeExp.RMSE.cv.train.back <- numeric(folds) 
+
+for (i in 1: folds) {
+  trainset2 <- lifeExpVIF[-testlist2[[i]],]
+  testset2 <- lifeExpVIF[testlist2[[i]],]
+  
+  model.cv.train.back <- lm(scale(Life.expectancy)~. -(Alcohol+Total.expenditure+Population+under.five.deaths), data=trainset2)
+  lifeExp.RMSE.cv.train.back[i] <- round(sqrt(mean(residuals(model.cv.train.back)^2)),5)
+}
+
+summary(model.cv.train.back)
+```
+
+RMSE of training data
+```{r}
+model.cv.back.prediction.train <- predict(model.cv.train, trainset2)
+model.cv.back.error.train <- trainset2$Life.expectancy - model.cv.back.prediction.train
+RMSE.Model4.train <- sqrt(mean(model.cv.back.error.train^2))
+RMSE.Model4.train
+```
+
+RMSE of testing data
+```{r}
+model.cv.back.prediction.test <- predict(model.cv.train, testset2)
+model.cv.back.error.test <- testset2$Life.expectancy - model.cv.back.prediction.test
+RMSE.Model4.test <- sqrt(mean(model.cv.back.error.test^2))
+RMSE.Model4.test
+```
+
+
+
+
+
+Regression Tree
+```{r}
+tree.lifeExp.train.RT = sample(1:nrow(lifeExpVIF),nrow(lifeExpVIF)*0.8)
+tree.lifeExp = tree(Life.expectancy~.,lifeExp,subset=tree.lifeExp.train.RT)
+summary(tree.lifeExp)
+```
+
+```{r}
+plot(tree.lifeExp)
+text(tree.lifeExp , pretty =0)
+```
+```{r}
+cv.lifeExp=cv.tree(tree.lifeExp)
+plot(cv.lifeExp$size,cv.lifeExp$dev,type ='b')
+```
+
+```{r}
+prune.lifeExp=prune.tree(tree.lifeExp,best=7)
+plot(prune.lifeExp)
+text(prune.lifeExp,pretty=0)
+```
+
+```{r}
+yhat=predict(tree.lifeExp,newdata=lifeExp[-tree.lifeExp.train.RT,])
+tree.lifeExp.test.RT=lifeExp[-tree.lifeExp.train.RT,"Life.expectancy"]
+plot(yhat,tree.lifeExp.test.RT)
+abline(0,1)
+mean((yhat-tree.lifeExp.test.RT)^2)
+```
+
+
+
+
+Bagging Model
+```{r}
+bag.lifeExp=randomForest(Life.expectancy~.,data=lifeExpVIF,subset=tree.lifeExp.train.RT,mtry=18,importance=TRUE)
+bag.lifeExp
+```
+
+```{r}
+yhat.bag = predict(bag.lifeExp,newdata=lifeExp[-tree.lifeExp.train.RT,])
+plot(yhat.bag, tree.lifeExp.test.RT)
+abline(0,1)
+mean((yhat.bag-tree.lifeExp.test.RT)^2)
+```
+
+
+
+
+Random Forest Model
+```{r}
+set.seed(500)
+rf.lifeExp= randomForest(Life.expectancy~.,data=lifeExpVIF, subset=tree.lifeExp.train.RT, mtry=4, importance =TRUE)
+yhat.rf = predict(rf.lifeExp ,newdata=lifeExp[-tree.lifeExp.train.RT ,])
+mean((yhat.rf-tree.lifeExp.test.RT)^2)
+```
+
+```{r}
+importance(rf.lifeExp)
+```
+
+```{r}
+varImpPlot(rf.lifeExp)
+```
+%IncMSE: This is the percentage increase in mean squared error (%IncMSE) that results from the variable being excluded from the model. The higher the %IncMSE value for a variable, the more important the variable is in predicting the outcome. This measure can be used to assess the predictive power of individual variables in the model.
+
+Both measures are reported as part of the variable importance measures in the Random Forest model. %IncMSE is more commonly used in regression models, while IncNodePurity is more commonly used in classification models.
+
+
+Boosting
+```{r}
+lifeExpVIF$Status <- factor(lifeExpVIF$Status, ordered = TRUE)
+boost.lifeExp=gbm(Life.expectancy~.,data=lifeExpVIF[tree.lifeExp.train.RT ,], distribution= "gaussian",n.trees=5000, interaction.depth=4)
+summary(boost.lifeExp)
+```
+
+```{r}
+par(mfrow=c(1,2))
+plot(boost.lifeExp,i="HIV.AIDS")
+plot(boost.lifeExp,i="Income.composition.of.resources")
+```
+
+```{r}
+yhat.boost=predict (boost.lifeExp ,newdata =lifeExpVIF[-tree.lifeExp.train.RT ,],
+n.trees=5000)
+mean((yhat.boost - tree.lifeExp.test.RT)^2)
+```
+
+```{r}
+boost.lifeExp.improved=gbm(Life.expectancy~.,data=lifeExpVIF[tree.lifeExp.train.RT, ], distribution = "gaussian",n.trees=5000,interaction.depth=4,shrinkage=0.05,verbose=F)
+yhat.boost.improved=predict (boost.lifeExp.improved,newdata=lifeExp[-tree.lifeExp.train.RT,],n.trees=5000)
+mean((yhat.boost.improved-tree.lifeExp.test.RT)^2)
+```
+
+Using different shrinkage values to test which value is the most suitable
+```{r}
+train <- sample(nrow(lifeExp), nrow(lifeExp) * 0.8)
+valid <- setdiff(seq_len(nrow(lifeExp)), train)
+
+# Initialize a list to store the results
+results <- list()
+
+# Loop over a range of shrinkage values
+for (shrinkage in c(0.5, 0.2, 0.1, 0.05)) {
+
+  # Train a gradient boosting model with the current shrinkage value
+  model <- gbm(Life.expectancy ~ ., data = lifeExp[train,], 
+               distribution = "gaussian", n.trees = 5000, 
+               interaction.depth = 4, shrinkage = shrinkage, 
+               verbose = FALSE)
+  
+  # Evaluate the model on the validation set
+  yhat <- predict(model, newdata = lifeExp[valid,], n.trees = 5000)
+  mse <- mean((yhat - lifeExp$Life.expectancy[valid])^2)
+  
+  # Store the results for this shrinkage value
+  results[[as.character(shrinkage)]] <- list(model = model, mse = mse)
+}
+
+# Print the results
+results
+```
+
+Getting the AIC/BIC result for bagging result
+```{r}
+oob_error.bag <- bag.lifeExp$mse[25]
+
+# Calculate the number of observations
+n.bag <- nrow(lifeExp)
+
+# Calculate the residual sum of squares
+rss.bag <- (1 - oob_error.bag)^2 * n.bag
+
+# Calculate the number of predictor variables
+p.bag <- ncol(lifeExp) - 1
+
+# Calculate the AIC
+AIC.bag <- 2 * p.bag + n.bag * log(rss.bag / n.bag)
+
+# Calculate the BIC
+BIC.bag <- log(n.bag) * p.bag + n.bag * log(rss.bag / n.bag)
+
+# Calculate RMSE
+RMSE.bag <- sqrt(mean((yhat.bag - tree.lifeExp.test.RT)^2))
+
+# Calculate MAE
+MAE.bag <- mean(abs(yhat.bag - tree.lifeExp.test.RT))
+
+# Calculate R-squared
+R2.bag <- 1 - sum((tree.lifeExp.test.RT - yhat.bag)^2) / sum((tree.lifeExp.test.RT - mean(tree.lifeExp.test.RT))^2)
+
+# Get the number of predictors
+p.bag <- ncol(lifeExp) - 1
+
+# Calculate residuals
+residuals.bag <- yhat.bag - tree.lifeExp.test.RT
+mean_residuals.bag <- mean(residuals.bag)
+
+# Calculate R-squared
+SStot.bag <- sum((tree.lifeExp.test.RT - mean(tree.lifeExp.test.RT))^2)
+SSres.bag <- sum(residuals.bag^2)
+R2.bag <- 1 - SSres.bag / SStot.bag
+
+# Calculate adjusted R-squared
+n.bag <- nrow(lifeExp)
+adj_R2.bag <- 1 - (1 - R2.bag) * (n.bag - 1) / (n.bag - p.bag - 1)
+
+# Print the results
+cat("AIC:", round(AIC.bag, 2), "\n")
+cat("BIC:", round(BIC.bag, 2), "\n")
+cat("RMSE:", round(RMSE.bag, 8), "\n")
+cat("MAE:", round(MAE.bag, 8), "\n")
+cat("R-squared:", round(R2.bag, 8), "\n")
+cat("Adjusted R-squared:", round(adj_R2.bag, 8), "\n")
+cat("Mean of the residuals:", round(mean_residuals.bag, 8), "\n")
+
+Model5.check <- data.frame(Model = "Bagging Model",
+            R2 = R2.bag,
+            RMSE = RMSE.bag,
+            MAE = MAE.bag)
+```
+
+
+Getting the AIC/BIC/ RMSE/MAE/R-Squared/adjusted R-squared/Mean of Residuals of Random Forest result
+```{r}
+# Calculate the OOB error
+oob_error.rf <- rf.lifeExp$mse[25]
+
+# Calculate the number of observations
+n.rf <- nrow(lifeExp)
+
+# Calculate the residual sum of squares
+rss.rf <- (1 - oob_error.rf)^2 * n.rf
+
+# Calculate the number of predictor variables
+p.rf <- ncol(lifeExp) - 1
+
+# Calculate the AIC
+AIC.rf <- 2 * p.rf + n.rf * log(rss.rf / n.rf)
+
+# Calculate the BIC
+BIC.rf <- log(n) * p.rf + n.rf * log(rss.rf / n.rf)
+
+# Calculate RMSE
+RMSE.rf <- sqrt(mean((yhat.rf - tree.lifeExp.test.RT)^2))
+
+# Calculate MAE
+MAE.rf <- mean(abs(yhat.rf - tree.lifeExp.test.RT))
+
+# Calculate R-squared
+R2.rf <- 1 - sum((tree.lifeExp.test.RT - yhat.rf)^2) / sum((tree.lifeExp.test.RT - mean(tree.lifeExp.test.RT))^2)
+
+# Get the number of predictors
+p.rf <- ncol(lifeExp) - 1
+
+# Calculate residuals
+residuals.rf <- yhat.rf - tree.lifeExp.test.RT
+mean_residuals.rf <- mean(residuals.rf)
+
+# Calculate R-squared
+SStot.rf <- sum((tree.lifeExp.test.RT - mean(tree.lifeExp.test.RT))^2)
+SSres.rf <- sum(residuals.rf^2)
+R2.rf <- 1 - SSres.rf / SStot.rf
+
+# Calculate adjusted R-squared
+n.rf <- nrow(lifeExp)
+adj_R2.rf <- 1 - (1 - R2.rf) * (n.rf - 1) / (n.rf - p.rf - 1)
+
+# Print the results
+cat("AIC:", round(AIC.rf, 2), "\n")
+cat("BIC:", round(BIC.rf, 2), "\n")
+cat("RMSE:", round(RMSE.rf, 8), "\n")
+cat("MAE:", round(MAE.rf, 8), "\n")
+cat("R-squared:", round(R2.rf, 8), "\n")
+cat("Adjusted R-squared:", round(adj_R2.rf, 8), "\n")
+cat("Mean of the residuals:", round(mean_residuals.rf, 8), "\n")
+
+Model6.check <- data.frame(Model = "Random Forest",
+            R2 = R2.rf,
+            RMSE = RMSE.rf,
+            MAE = MAE.rf)
+```
+
+
+Getting the AIC/BIC/ RMSE/MAE/R-Squared/adjusted R-squared/Mean of Residuals of boosting result
+```{r}
+# Calculate the number of observations
+n.boost <- nrow(lifeExp)
+
+# Calculate the number of predictor variables
+p.boost <- ncol(lifeExp) - 1
+
+#Getting the MSE
+mse.boost <- mean((yhat.boost.improved-tree.lifeExp.test.RT)^2)
+
+# Calculate the residual sum of squares
+rss.boost <- mse.boost * length(tree.lifeExp.test.RT)
+
+# Calculate the AIC
+AIC.boost <- 2 * p.boost + n.boost * log(rss.boost / n.boost)
+
+# Calculate the BIC
+BIC.boost <- log(n.boost) * p.boost + n.boost * log(rss.boost / n.boost)
+
+# Calculate RMSE
+RMSE.boost <- sqrt(mean((yhat.boost.improved - tree.lifeExp.test.RT)^2))
+
+# Calculate MAE
+MAE.boost <- mean(abs(yhat.boost.improved - tree.lifeExp.test.RT))
+
+# Calculate R-squared
+R2.boost <- 1 - sum((tree.lifeExp.test.RT - yhat.boost.improved)^2) / sum((tree.lifeExp.test.RT - mean(tree.lifeExp.test.RT))^2)
+
+# Get the number of predictors
+p.boost <- ncol(lifeExp) - 1
+
+# Calculate residuals
+residuals.boost <- yhat.boost.improved - tree.lifeExp.test.RT
+mean_residuals.boost <- mean(residuals.boost)
+
+# Calculate R-squared
+SStot.boost <- sum((tree.lifeExp.test.RT - mean(tree.lifeExp.test.RT))^2)
+SSres.boost <- sum(residuals.boost^2)
+R2.boost <- 1 - SSres.boost / SStot.boost
+
+# Calculate adjusted R-squared
+n.boost <- nrow(lifeExp)
+adj_R2.boost <- 1 - (1 - R2.boost) * (n.boost - 1) / (n.boost - p.boost - 1)
+
+# Print the results
+cat("AIC:", round(AIC.boost, 2), "\n")
+cat("BIC:", round(BIC.boost, 2), "\n")
+cat("RMSE:", round(RMSE.boost, 8), "\n")
+cat("MAE:", round(MAE.boost, 8), "\n")
+cat("R-squared:", round(R2.boost, 8), "\n")
+cat("Adjusted R-squared:", round(adj_R2.boost, 8), "\n")
+cat("Mean of the residuals:", round(mean_residuals.boost, 8), "\n")
+
+Model7.check <- data.frame(Model = "Boosting Model",
+            R2 = R2.boost,
+            RMSE = RMSE.boost,
+            MAE = MAE.boost)
+```
+
+
+Comparing the results
+```{r}
+model_metrics <- data.frame(
+Model = c("Full Model","Backwards Regression Linear Model", "CV Full Model", "CV Backwards Regression Linear Model", "Bagging Model", "Random Forest", "Boosting Model"),
+AIC = c(AIC(LR.ModelVIF), AIC(LR.ModelVIFbackwards), AIC(model.cv.train), AIC(model.cv.train.back),AIC.bag,AIC.rf,AIC.boost),
+#Lower AIC better
+
+BIC = c(BIC(LR.ModelVIF), BIC(LR.ModelVIFbackwards), BIC(model.cv.train), BIC(model.cv.train.back),BIC.bag,BIC.rf,BIC.boost),
+#Lower BIC better
+
+R2 = c(R2(LR.ModelVIF.prediction.test, lifeExpVIF.test$Life.expectancy), R2(LR.ModelVIFB.prediction.test, lifeExpVIFB.test$Life.expectancy), R2(model.cv.prediction.test, testset1$Life.expectancy), R2(model.cv.back.prediction.test, testset2$Life.expectancy), R2.bag,R2.rf,R2.boost),
+#Higher R2 means better fit
+
+Adj_R2 = c(summary(LR.ModelVIF)$adj.r.squared, summary(LR.ModelVIFbackwards)$adj.r.squared, summary(model.cv.train)$adj.r.squared, summary(model.cv.train.back)$adj.r.squared, adj_R2.bag, adj_R2.rf,adj_R2.boost),
+#Higher adjusted R2 means better fit
+
+Residuals= c(sqrt(mean(LR.ModelVIF$residuals^2)), sqrt(mean(LR.ModelVIFbackwards$residuals^2)), sqrt(mean(model.cv.train$residuals^2)),  sqrt(mean(model.cv.train.back$residuals^2)),mean_residuals.bag,mean_residuals.rf,mean_residuals.boost),
+#Lower the better fit
+
+RMSE = c(RMSE(LR.ModelVIF.prediction.test, lifeExpVIF.test$Life.expectancy), RMSE(LR.ModelVIFB.prediction.test, lifeExpVIFB.test$Life.expectancy), RMSE = RMSE(model.cv.prediction.test, testset1$Life.expectancy), RMSE = RMSE(model.cv.back.prediction.test,testset2$Life.expectancy), RMSE.bag,RMSE.rf,RMSE.boost),
+#Lower RMSE means better
+
+MAE = c(MAE(LR.ModelVIF.prediction.test, lifeExpVIF.test$Life.expectancy),   MAE(LR.ModelVIFB.prediction.test, lifeExpVIFB.test$Life.expectancy), MAE(model.cv.prediction.test,testset1$Life.expectancy),
+MAE = MAE(model.cv.back.prediction.test, testset2$Life.expectancy),MAE.bag,MAE.rf,MAE.boost)
+#Lower MAE means better
+)
+model_metrics
+
+```
+
